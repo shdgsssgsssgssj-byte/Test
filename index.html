@@ -132,6 +132,7 @@
         .phone {
             color: #666;
             font-size: 14px;
+            word-break: break-all;
         }
         
         .message {
@@ -142,6 +143,8 @@
             color: #555;
             margin-top: 10px;
             word-break: break-all;
+            max-height: 100px;
+            overflow-y: auto;
         }
         
         .timestamp {
@@ -199,19 +202,19 @@
         </div>
         
         <div class="stats" id="stats">
-            Loading...
+            Ready to fetch OTPs...
         </div>
         
         <div id="errorMsg" style="display: none;" class="error"></div>
         
         <div id="otpContainer" class="otp-grid">
-            <div class="loading">Loading OTPs...</div>
+            <div class="loading">📅 Select a date and click Fetch OTPs</div>
         </div>
     </div>
     
     <script>
-        const API_BASE = "https://deedar.vercel.app";
-        let autoRefreshInterval = null;
+        // API URL - direct Ivasms API use kar rahe hain
+        const IVAS_API_URL = "https://deedar.vercel.app";
         
         // Aaj ki date set karo
         const today = new Date();
@@ -219,6 +222,8 @@
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const yyyy = today.getFullYear();
         document.getElementById('dateInput').value = `${dd}/${mm}/${yyyy}`;
+        
+        let autoRefreshInterval = null;
         
         async function fetchOTP() {
             const date = document.getElementById('dateInput').value;
@@ -235,22 +240,34 @@
             errorDiv.style.display = 'none';
             
             try {
-                const url = `${API_BASE}/sms?date=${date}&limit=50`;
+                // Direct Ivasms API call (kyunki aap ka API proxy hai)
+                const url = `${IVAS_API_URL}/sms?date=${date}&limit=50`;
                 console.log("Fetching:", url);
                 
                 const response = await fetch(url);
                 const data = await response.json();
                 
-                console.log("Response:", data);
+                console.log("Full Response:", data);
                 
-                if (data.status === "success") {
-                    const messages = data.otp_messages || [];
-                    displayOTPs(messages);
-                    statsDiv.innerHTML = `📊 Total OTPs: ${messages.length} | Date: ${date} | Last updated: ${new Date().toLocaleTimeString()}`;
-                } else {
-                    showError(data.message || "Failed to fetch OTPs");
-                    container.innerHTML = '<div class="no-data">❌ No OTPs found for this date</div>';
+                // Check if we have OTP messages
+                if (data.otp_messages && Array.isArray(data.otp_messages)) {
+                    displayOTPs(data.otp_messages);
+                    statsDiv.innerHTML = `📊 Total OTPs: ${data.otp_messages.length} | Date: ${date} | Last updated: ${new Date().toLocaleTimeString()}`;
+                } 
+                else if (data.status === "success" && data.otp_messages) {
+                    displayOTPs(data.otp_messages);
+                    statsDiv.innerHTML = `📊 Total OTPs: ${data.otp_messages.length} | Date: ${date}`;
                 }
+                else if (data.message === "No SMS found for this date") {
+                    container.innerHTML = '<div class="no-data">📭 No OTP messages found for this date</div>';
+                    statsDiv.innerHTML = `📊 No OTPs found for ${date}`;
+                }
+                else {
+                    console.log("Unexpected response:", data);
+                    container.innerHTML = '<div class="no-data">⚠️ No OTPs available. Try another date.</div>';
+                    statsDiv.innerHTML = `📊 No data for ${date}`;
+                }
+                
             } catch (error) {
                 console.error("Error:", error);
                 showError("Network error: " + error.message);
@@ -266,9 +283,9 @@
                 return;
             }
             
-            container.innerHTML = messages.map(msg => {
-                const phone = msg.phone_number || "Unknown";
-                const message = msg.otp_message || "";
+            container.innerHTML = messages.map((msg, index) => {
+                const phone = msg.phone_number || msg.phone || "Unknown";
+                const message = msg.otp_message || msg.message || msg.text || "";
                 const otp = extractOTP(message);
                 
                 return `
@@ -278,7 +295,7 @@
                             <span>${otp}</span>
                         </div>
                         <div class="message">
-                            ${escapeHtml(message.substring(0, 200))}${message.length > 200 ? '...' : ''}
+                            ${escapeHtml(message.substring(0, 300))}${message.length > 300 ? '...' : ''}
                         </div>
                         <div class="timestamp">
                             🕐 ${new Date().toLocaleTimeString()}
@@ -289,9 +306,13 @@
         }
         
         function extractOTP(message) {
+            if (!message) return "N/A";
+            
+            // Different patterns for OTP
             const patterns = [
-                /\b(\d{4,8})\b/,
-                /(?:code|otp|verification|pin)[:\s]*(\d{3,8})/i
+                /\b(\d{4,8})\b/,                           // 4-8 digits
+                /(?:code|otp|verification|pin|کود|رمز)[:\s]*(\d{3,8})/i,  // code: 12345
+                /(\d{4,8})(?:\s|$)/                        // digits at end
             ];
             
             for (const pattern of patterns) {
@@ -300,14 +321,23 @@
                     return match[1];
                 }
             }
+            
+            // Try to find any 4-6 digit number
+            const digits = message.match(/\b\d{4,6}\b/g);
+            if (digits && digits.length > 0) {
+                return digits[0];
+            }
+            
             return "N/A";
         }
         
         function maskPhone(phone) {
-            if (phone.length >= 10) {
-                return phone.slice(0, 5) + "****" + phone.slice(-4);
+            if (!phone) return "Unknown";
+            const phoneStr = String(phone);
+            if (phoneStr.length >= 10) {
+                return phoneStr.slice(0, 5) + "****" + phoneStr.slice(-4);
             }
-            return phone;
+            return phoneStr;
         }
         
         function escapeHtml(text) {
