@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTP Viewer - Deedar</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.8;
+        }
+        
+        .controls {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .controls input {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: white;
+            font-size: 16px;
+        }
+        
+        .controls button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            background: #00b894;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .controls button:hover {
+            transform: scale(1.05);
+            background: #00a884;
+        }
+        
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+        }
+        
+        .auto-refresh input {
+            width: 18px;
+            height: 18px;
+        }
+        
+        .stats {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: white;
+            text-align: center;
+        }
+        
+        .otp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        
+        .otp-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+        
+        .otp-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .otp-code {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .otp-code span {
+            font-size: 32px;
+            font-weight: bold;
+            letter-spacing: 5px;
+            color: #00b894;
+        }
+        
+        .phone {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .message {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #555;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        
+        .timestamp {
+            font-size: 11px;
+            color: #999;
+            margin-top: 10px;
+            text-align: right;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            padding: 50px;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: white;
+            padding: 50px;
+        }
+        
+        .error {
+            background: #d63031;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .otp-grid {
+                grid-template-columns: 1fr;
+            }
+            .header h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 OTP Viewer</h1>
+            <p>Apni Ivasms API se OTP yahan dekhein</p>
+        </div>
+        
+        <div class="controls">
+            <input type="text" id="dateInput" placeholder="DD/MM/YYYY">
+            <button onclick="fetchOTP()">🔍 Fetch OTPs</button>
+            <div class="auto-refresh">
+                <input type="checkbox" id="autoRefresh">
+                <label>Auto Refresh (30 sec)</label>
+            </div>
+        </div>
+        
+        <div class="stats" id="stats">
+            Loading...
+        </div>
+        
+        <div id="errorMsg" style="display: none;" class="error"></div>
+        
+        <div id="otpContainer" class="otp-grid">
+            <div class="loading">Loading OTPs...</div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = "https://deedar.vercel.app";
+        let autoRefreshInterval = null;
+        
+        // Aaj ki date set karo
+        const today = new Date();
+        const dd = String(today.getDate()).padStart(2, '0');
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const yyyy = today.getFullYear();
+        document.getElementById('dateInput').value = `${dd}/${mm}/${yyyy}`;
+        
+        async function fetchOTP() {
+            const date = document.getElementById('dateInput').value;
+            const container = document.getElementById('otpContainer');
+            const statsDiv = document.getElementById('stats');
+            const errorDiv = document.getElementById('errorMsg');
+            
+            if (!date) {
+                showError("Please select a date");
+                return;
+            }
+            
+            container.innerHTML = '<div class="loading">⏳ Fetching OTPs...</div>';
+            errorDiv.style.display = 'none';
+            
+            try {
+                const url = `${API_BASE}/sms?date=${date}&limit=50`;
+                console.log("Fetching:", url);
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                console.log("Response:", data);
+                
+                if (data.status === "success") {
+                    const messages = data.otp_messages || [];
+                    displayOTPs(messages);
+                    statsDiv.innerHTML = `📊 Total OTPs: ${messages.length} | Date: ${date} | Last updated: ${new Date().toLocaleTimeString()}`;
+                } else {
+                    showError(data.message || "Failed to fetch OTPs");
+                    container.innerHTML = '<div class="no-data">❌ No OTPs found for this date</div>';
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                showError("Network error: " + error.message);
+                container.innerHTML = '<div class="no-data">⚠️ Failed to load OTPs. Check your connection.</div>';
+            }
+        }
+        
+        function displayOTPs(messages) {
+            const container = document.getElementById('otpContainer');
+            
+            if (!messages || messages.length === 0) {
+                container.innerHTML = '<div class="no-data">📭 No OTP messages found for this date</div>';
+                return;
+            }
+            
+            container.innerHTML = messages.map(msg => {
+                const phone = msg.phone_number || "Unknown";
+                const message = msg.otp_message || "";
+                const otp = extractOTP(message);
+                
+                return `
+                    <div class="otp-card">
+                        <div class="phone">📞 ${maskPhone(phone)}</div>
+                        <div class="otp-code">
+                            <span>${otp}</span>
+                        </div>
+                        <div class="message">
+                            ${escapeHtml(message.substring(0, 200))}${message.length > 200 ? '...' : ''}
+                        </div>
+                        <div class="timestamp">
+                            🕐 ${new Date().toLocaleTimeString()}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function extractOTP(message) {
+            const patterns = [
+                /\b(\d{4,8})\b/,
+                /(?:code|otp|verification|pin)[:\s]*(\d{3,8})/i
+            ];
+            
+            for (const pattern of patterns) {
+                const match = message.match(pattern);
+                if (match && match[1]) {
+                    return match[1];
+                }
+            }
+            return "N/A";
+        }
+        
+        function maskPhone(phone) {
+            if (phone.length >= 10) {
+                return phone.slice(0, 5) + "****" + phone.slice(-4);
+            }
+            return phone;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showError(msg) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Auto refresh setup
+        document.getElementById('autoRefresh').addEventListener('change', (e) => {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            if (e.target.checked) {
+                autoRefreshInterval = setInterval(fetchOTP, 30000);
+            }
+        });
+        
+        // Pehli baar fetch karo
+        fetchOTP();
+    </script>
+</body>
+</html>
